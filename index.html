@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Space Hub — Kalkulator • Flappy • Tebak Angka</title>
+<style>
+  :root{
+    --bg-dark:#030317;
+    --panel: rgba(255,255,255,0.03);
+    --glass: rgba(255,255,255,0.03);
+    --accent: #ffd166;
+    --text: #e6eef8;
+    --muted: #b7c0d6;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:Inter, system-ui, Arial; background:var(--bg-dark); color:var(--text); overflow:hidden}
+  .app{width:100%;height:100%;position:relative;display:flex;align-items:center;justify-content:center}
+
+  /* canvas layers */
+  canvas.layer { position:absolute; left:0; top:0; width:100%; height:100%; z-index:0; display:block; }
+
+  /* Sun & Earth */
+  .sun, .earth { position:absolute; z-index:1; pointer-events:none; transform:translateZ(0); }
+  .sun { width:160px; height:160px; left:6%; top:8%; border-radius:50%;
+    background: radial-gradient(circle at 30% 30%, #fff7c2 0%, #ffd166 15%, #ff9e1b 45%, #ff6a00 100%);
+    box-shadow:0 0 80px rgba(255,160,0,0.35), inset -12px -12px 40px rgba(255,255,255,0.06);
+  }
+  .earth { width:140px; height:140px; right:12%; bottom:18%; border-radius:50%;
+    background: radial-gradient(circle at 35% 35%, #a7deff 0%, #1f9dd6 30%, #054a61 60%);
+    box-shadow: 0 0 18px rgba(0,0,0,0.45) inset;
+  }
+
+  /* UI container */
+  .ui { position:relative; z-index:3; width:100%; max-width:1100px; padding:22px; display:flex; gap:20px; justify-content:center; align-items:flex-start; margin:0 auto; pointer-events:auto; }
+  .panel{ width:380px; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:12px; padding:18px; border:1px solid rgba(255,255,255,0.04); backdrop-filter: blur(6px); box-shadow: 0 10px 30px rgba(0,0,0,0.6); color:var(--text) }
+  h1,h2{margin:0 0 12px 0;font-weight:700}
+  .muted{color:var(--muted); font-size:0.92rem}
+
+  .center{ display:flex; flex-direction:column; align-items:center; gap:12px; text-align:center }
+  .btn{ padding:10px 14px; border-radius:8px; cursor:pointer; border:none; background:linear-gradient(180deg,var(--accent),#ffb74d); color:#071428; font-weight:700 }
+  .btn.secondary{ background:transparent; color:var(--text); border:1px solid rgba(255,255,255,0.06) }
+
+  .screen{ display:none; width:100%; max-width:1100px; z-index:3 }
+  .screen.active{ display:flex; gap:20px; }
+
+  .menu-list{ display:flex; flex-direction:column; gap:10px }
+  .menu-item{ padding:12px 14px; border-radius:8px; background:var(--panel); cursor:pointer; border:1px solid rgba(255,255,255,0.03) }
+
+  /* Calculator */
+  .calc-display{ height:64px; background:rgba(255,255,255,0.02); border-radius:8px; padding:10px; display:flex; flex-direction:column; justify-content:center; border:1px solid rgba(255,255,255,0.03) }
+  .calc-keys{ display:grid; grid-template-columns: repeat(6,1fr); gap:8px; margin-top:10px }
+  .key{ padding:10px; text-align:center; border-radius:6px; background:rgba(255,255,255,0.02); cursor:pointer; user-select:none }
+
+  /* Flappy */
+  #flappy-canvas{ width:100%; height:420px; background:linear-gradient(#08102a,#051022); border-radius:10px; display:block }
+  .flappy-controls{ display:flex; gap:8px; align-items:center; margin-top:8px }
+  .game-over-red{ position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(255,0,0,0.08); z-index:6; }
+  .game-over-red.show{ display:flex }
+
+  /* Guess */
+  .math-bg{ background-image:
+    linear-gradient(transparent 70%, rgba(255,255,255,0.02) 70%),
+    linear-gradient(90deg, rgba(255,255,255,0.01) 1px, transparent 1px);
+    background-size: 100% 40px, 60px 60px;
+  }
+  .timer-bar{ height:10px; background:rgba(255,255,255,0.04); border-radius:8px; overflow:hidden; }
+  .timer-fill{ height:100%; width:100%; background:linear-gradient(90deg,#ffb74d,#ff6a00); transform-origin:left }
+
+  @media (max-width:980px){
+    .screen.active{ flex-direction:column; align-items:center }
+    .panel{ width:92% }
+    .earth{ display:none }
+    .sun{ display:none }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Canvases: starfield, falling stars, effects -->
+  <canvas id="space-canvas" class="layer"></canvas>
+  <canvas id="stars-canvas" class="layer"></canvas>
+  <canvas id="effects-canvas" class="layer"></canvas>
+
+  <div class="sun" aria-hidden="true"></div>
+  <div class="earth" aria-hidden="true"></div>
+
+  <!-- UI screens -->
+  <div class="ui">
+
+    <!-- Welcome -->
+    <div id="welcome-screen" class="screen active" style="justify-content:center;">
+      <div class="panel center" style="max-width:560px">
+        <h1>Space Hub</h1>
+        <div class="muted">Portal: Kalkulator • Flappy Bird • Tebak Angka</div>
+        <p style="font-size:0.95rem">Klik <strong>Masuk</strong> untuk memulai. Latar: tata surya interaktif.</p>
+        <button id="enter-btn" class="btn">Masuk</button>
+        <div class="muted" style="margin-top:10px">Loading akan berlangsung selama 5 detik.</div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading-screen" class="screen" style="justify-content:center; align-items:center;">
+      <div class="panel center" style="width:420px">
+        <h2>Memuat...</h2>
+        <div class="muted">Menyiapkan tata surya</div>
+        <div style="margin-top:18px; width:100%">
+          <div style="height:10px; width:100%; background:rgba(255,255,255,0.04); border-radius:8px; overflow:hidden;">
+            <div id="loading-fill" style="height:100%; width:0%; background:linear-gradient(90deg,#ffd166,#ff6a00);"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main -->
+    <div id="main-screen" class="screen" style="align-items:flex-start">
+      <div class="panel">
+        <h2>Main Menu</h2>
+        <div class="muted">Pilih fitur</div>
+        <div class="menu-list" style="margin-top:12px">
+          <div class="menu-item" data-screen="calc-screen">1) Kalkulator Ilmiah</div>
+          <div class="menu-item" data-screen="flappy-main-screen">2) Flappy Bird</div>
+          <div class="menu-item" data-screen="guess-main-screen">3) Tebak Angka</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Tata Surya</h2>
+        <p class="muted">Latar bertema tata surya. Bintang kecil jatuh dari kanan → kiri; beberapa menabrak Bumi dan memunculkan efek.</p>
+        <div style="margin-top:10px">
+          <button id="to-welcome" class="btn secondary">Kembali</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Calculator -->
+    <div id="calc-screen" class="screen" style="align-items:flex-start">
+      <div class="panel" style="width:100%">
+        <h2>Kalkulator Ilmiah</h2>
+        <div class="muted">Fitur: + - * /, sin/cos/tan (deg support sin(30deg)), sqrt, pow (^), ln/log10, π, e, factorial (!)</div>
+
+        <div style="margin-top:12px">
+          <div class="calc-display">
+            <div id="calc-expr" style="font-size:0.95rem; color:var(--muted)">&nbsp;</div>
+            <div id="calc-result" style="font-size:1.25rem; font-weight:700">0</div>
+          </div>
+
+          <div style="display:flex; gap:8px; margin-top:10px">
+            <input id="calc-input" class="input" style="flex:1; padding:10px; border-radius:6px; border:1px solid rgba(255,255,255,0.04); background:transparent; color:var(--text)" placeholder="Contoh: 2+3*sqrt(4) atau sin(30deg)" />
+            <button id="eval-btn" class="btn">Hitung</button>
+          </div>
+
+          <div class="calc-keys" style="margin-top:10px">
+            <div class="key" data-insert="sin(">sin</div>
+            <div class="key" data-insert="cos(">cos</div>
+            <div class="key" data-insert="tan(">tan</div>
+            <div class="key" data-insert="log10(">log10</div>
+            <div class="key" data-insert="ln(">ln</div>
+            <div class="key" data-insert="sqrt(">√</div>
+
+            <div class="key" data-insert="7">7</div>
+            <div class="key" data-insert="8">8</div>
+            <div class="key" data-insert="9">9</div>
+            <div class="key" data-insert="^">^</div>
+            <div class="key" data-insert="^2">x²</div>
+            <div class="key" data-insert="!">!</div>
+
+            <div class="key" data-insert="4">4</div>
+            <div class="key" data-insert="5">5</div>
+            <div class="key" data-insert="6">6</div>
+            <div class="key" data-insert="(">(</div>
+            <div class="key" data-insert=")">)</div>
+            <div class="key" data-action="clear">C</div>
+
+            <div class="key" data-insert="1">1</div>
+            <div class="key" data-insert="2">2</div>
+            <div class="key" data-insert="3">3</div>
+            <div class="key" data-insert="+">+</div>
+            <div class="key" data-insert="-">-</div>
+            <div class="key" data-action="back">←</div>
+
+            <div class="key" data-insert="0">0</div>
+            <div class="key" data-insert=".">.</div>
+            <div class="key" data-insert="pi">π</div>
+            <div class="key" data-insert="e">e</div>
+            <div class="key" data-insert="*">×</div>
+            <div class="key" data-insert="/">÷</div>
+          </div>
+
+          <div style="margin-top:12px; display:flex; gap:8px;">
+            <button id="calc-back" class="btn secondary">Kembali</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flappy Menu -->
+    <div id="flappy-main-screen" class="screen" style="align-items:flex-start">
+      <div class="panel">
+        <h2>Flappy Bird (Simple)</h2>
+        <div class="muted">Menu game — tekan Mulai untuk bermain.</div>
+        <div style="margin-top:12px; display:flex; gap:10px;">
+          <button id="flappy-start-btn" class="btn">Mulai</button>
+          <button id="flappy-back-btn" class="btn secondary">Kembali ke Main Menu</button>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="muted">Score saat bermain akan muncul di bawah canvas.</div>
+        </div>
+      </div>
+
+      <div class="panel" style="width:540px">
+        <h3>Preview</h3>
+        <canvas id="flappy-canvas" width="800" height="420" style="width:100%; border-radius:8px; background:linear-gradient(#081024,#021220)"></canvas>
+        <div class="flappy-controls">
+          <div class="muted">Score: <span id="flappy-score">0</span></div>
+          <div style="flex:1"></div>
+          <button id="flappy-pause" class="btn secondary">Pause</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="flappy-gameover" class="game-over-red"><div style="text-align:center; color:white;">
+      <div style="font-size:28px;font-weight:800">Game Over</div>
+      <div style="margin-top:8px">Score: <span id="flappy-go-score">0</span></div>
+      <div style="margin-top:10px">
+        <button id="flappy-restart" class="btn">Main Lagi</button>
+        <button id="flappy-return" class="btn secondary">Menu Flappy</button>
+      </div>
+    </div></div>
+
+    <!-- Guess Menu -->
+    <div id="guess-main-screen" class="screen" style="align-items:flex-start">
+      <div class="panel math-bg">
+        <h2>Tebak Angka</h2>
+        <div class="muted">Tebak angka 1 - 1000. Waktu tiap permainan: 10 detik.</div>
+        <div style="margin-top:12px; display:flex; gap:8px;">
+          <button id="guess-start-btn" class="btn">Mulai</button>
+          <button id="guess-back-btn" class="btn secondary">Kembali ke Main Menu</button>
+        </div>
+      </div>
+
+      <div class="panel" style="width:500px">
+        <h3>Game</h3>
+        <div id="guess-area" style="display:none; margin-top:8px;">
+          <div class="muted">Waktu tersisa:</div>
+          <div class="timer-bar"><div id="timer-fill" class="timer-fill" style="width:100%"></div></div>
+          <div style="margin-top:10px">Masukkan tebakan:</div>
+          <input id="guess-input" class="input" type="number" min="1" max="1000" placeholder="1 - 1000" style="padding:8px; border-radius:6px; width:120px;"/>
+          <div style="margin-top:8px; display:flex; gap:8px;">
+            <button id="guess-submit" class="btn">Tebak</button>
+            <button id="guess-reset" class="btn secondary">Reset</button>
+          </div>
+          <div id="guess-feedback" style="margin-top:10px" class="muted"></div>
+          <div style="margin-top:8px">Skor: <span id="guess-score">0</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div> <!-- end ui -->
+
+</div> <!-- end app -->
+
+<script>
+/* =========================
+   Canvas backgrounds (starfield, falling stars, impacts)
+   ========================= */
+(function(){
+  const space = document.getElementById('space-canvas');
+  const starsC = document.getElementById('stars-canvas');
+  const fx = document.getElementById('effects-canvas');
+  const earthEl = document.querySelector('.earth');
+
+  let w = innerWidth, h = innerHeight, dpr = Math.max(1, window.devicePixelRatio || 1);
+
+  function resizeAll(){
+    w = innerWidth; h = innerHeight;
+    [space, starsC, fx].forEach(c=>{
+      c.width = Math.floor(w * dpr);
+      c.height = Math.floor(h * dpr);
+      c.style.width = w + 'px';
+      c.style.height = h + 'px';
+      const ctx = c.getContext('2d');
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    });
+    drawStaticStars();
+  }
+  addEventListener('resize', ()=>{ dpr = Math.max(1, window.devicePixelRatio || 1); resizeAll(); });
+  resizeAll();
+
+  // static field
+  function drawStaticStars(){
+    const ctx = space.getContext('2d');
+    ctx.clearRect(0,0,w,h);
+    const count = Math.floor((w*h)/9000);
+    for(let i=0;i<count;i++){
+      const x = Math.random()*w, y = Math.random()*h, r = Math.random()*1.4;
+      const a = 0.25 + Math.random()*0.8;
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    }
+    // a few bright stars
+    for(let i=0;i<40;i++){
+      const x = Math.random()*w, y = Math.random()*h;
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.beginPath(); ctx.arc(x,y,1.6+Math.random()*1.6,0,Math.PI*2); ctx.fill();
+    }
+  }
+
+  // falling tiny stars (right -> left)
+  const sctx = starsC.getContext('2d');
+  let particles = [];
+  function spawnParticle(initial=false){
+    const size = 1 + Math.random()*2;
+    const y = Math.random()*h;
+    const x = initial ? Math.random()*w : w + 20 + Math.random()*200;
+    const vx = - (1.2 + Math.random()*3.0);
+    const vy = (Math.random()-0.5)*0.6;
+    const life = 60 + Math.random()*200;
+    particles.push({x,y,vx,vy,size,age:0,life});
+  }
+  function resetParticles(){ particles=[]; const n = Math.floor(w/140); for(let i=0;i<n;i++) spawnParticle(true); }
+  resetParticles();
+
+  // sparks
+  const fctx = fx.getContext('2d');
+  let sparks = [];
+  function spawnSparks(x,y){
+    for(let i=0;i<12;i++){
+      const a = Math.random()*Math.PI*2; const sp = 0.8 + Math.random()*2.4;
+      sparks.push({x,y,vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:20+Math.random()*40, age:0, size:1+Math.random()*3});
+    }
+    if(earthEl) earthEl.animate([{transform:'scale(1)'},{transform:'scale(1.06)'},{transform:'scale(1)'}], {duration:260, easing:'ease-out'});
+  }
+
+  function checkCollision(p){
+    const rect = earthEl.getBoundingClientRect();
+    const cx = rect.left + rect.width/2;
+    const cy = rect.top + rect.height/2;
+    const r = rect.width/2;
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    return (dx*dx + dy*dy) < (r*r);
+  }
+
+  function animate(){
+    sctx.clearRect(0,0,w,h);
+    if(Math.random() < 0.08) spawnParticle();
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy; p.age++;
+      sctx.fillStyle = 'rgba(255,255,255,0.95)';
+      sctx.beginPath(); sctx.arc(p.x,p.y,p.size,0,Math.PI*2); sctx.fill();
+
+      if(earthEl && checkCollision(p)){
+        spawnSparks(p.x,p.y);
+        particles.splice(i,1);
+        continue;
+      }
+      if(p.x < -60 || p.y < -60 || p.y > h+60 || p.age > p.life) particles.splice(i,1);
+    }
+
+    fctx.clearRect(0,0,w,h);
+    for(let i=sparks.length-1;i>=0;i--){
+      const s = sparks[i];
+      s.x += s.vx; s.y += s.vy; s.age++;
+      const a = Math.max(0,1 - s.age/s.life);
+      fctx.fillStyle = `rgba(255,220,150,${a})`;
+      fctx.beginPath(); fctx.arc(s.x,s.y,s.size,0,Math.PI*2); fctx.fill();
+      if(s.age > s.life) sparks.splice(i,1);
+    }
+
+    requestAnimationFrame(animate);
+  }
+  animate();
+  setInterval(()=>{ if(particles.length < Math.floor(w/140)) spawnParticle(); }, 300);
+})();
+
+/* =========================
+   Navigation & loading
+   ========================= */
+(function(){
+  const screens = document.querySelectorAll('.screen');
+  function showScreen(id){
+    screens.forEach(s=>s.classList.remove('active'));
+    const el = document.getElementById(id);
+    if(el) el.classList.add('active');
+    // stop games when leaving screens
+    if(id !== 'flappy-main-screen') if(window._flappy && window._flappy.stop) window._flappy.stop();
+    if(id !== 'guess-main-screen') if(window.stopGuessGame) window.stopGuessGame();
+  }
+
+  window.showScreen = showScreen;
+
+  const enterBtn = document.getElementById('enter-btn');
+  const loadingFill = document.getElementById('loading-fill');
+
+  enterBtn.addEventListener('click', ()=> {
+    showScreen('loading-screen');
+    loadingFill.style.width = '0%';
+    const duration = 5000;
+    const start = Date.now();
+    const t = setInterval(()=>{
+      const pct = Math.min(100, Math.floor((Date.now()-start)/duration*100));
+      loadingFill.style.width = pct + '%';
+      if(pct >= 100){ clearInterval(t); showScreen('main-screen'); }
+    }, 80);
+  });
+
+  document.getElementById('to-welcome').addEventListener('click', ()=> showScreen('welcome-screen'));
+
+  document.querySelectorAll('.menu-item').forEach(it=>{
+    it.addEventListener('click', ()=> {
+      const screen = it.getAttribute('data-screen');
+      showScreen(screen);
+      if(screen === 'guess-main-screen' && window.newGuessSecret) window.newGuessSecret();
+    });
+  });
+
+  document.getElementById('calc-back').addEventListener('click', ()=> showScreen('main-screen'));
+  document.getElementById('flappy-back-btn').addEventListener('click', ()=> showScreen('main-screen'));
+  document.getElementById('guess-back-btn').addEventListener('click', ()=> { if(window.stopGuessGame) window.stopGuessGame(); showScreen('main-screen'); });
+
+})();
+
+/* =========================
+   Calculator logic (safe-ish)
+   ========================= */
+(function(){
+  const input = document.getElementById('calc-input');
+  const exprEl = document.getElementById('calc-expr');
+  const resultEl = document.getElementById('calc-result');
+
+  document.querySelectorAll('.key').forEach(k=>{
+    k.addEventListener('click', ()=>{
+      const ins = k.dataset.insert;
+      const action = k.dataset.action;
+      if(action === 'clear'){ input.value=''; exprEl.textContent=''; resultEl.textContent='0'; return; }
+      if(action === 'back'){ input.value = input.value.slice(0,-1); return; }
+      if(ins) input.value += ins;
+    });
+  });
+
+  function factorial(n){
+    n = Number(n);
+    if(!isFinite(n) || n < 0) return NaN;
+    let r=1;
+    for(let i=1;i<=Math.floor(n);i++) r*=i;
+    return r;
+  }
+
+  function safeEval(expr){
+    if(typeof expr !== 'string') throw new Error('Invalid');
+    let e = expr.replace(/×/g,'*').replace(/÷/g,'/').replace(/π/g,'pi');
+
+    // constants
+    e = e.replace(/\bpi\b/g,'(Math.PI)').replace(/\be\b/g,'(Math.E)');
+
+    // factorial: n! => fact(n)
+    e = e.replace(/(\d+(\.\d+)?|\([^()]*\))\s*!/g, (m,g1)=>`fact(${g1})`);
+
+    // degree for trig e.g. sin(30deg)
+    e = e.replace(/\b(sin|cos|tan)\s*\(\s*([^\)]+?)\s*deg\s*\)/ig, (m,fn,val)=> `${fn}Deg(${val})`);
+
+    // ^ operator to Math.pow (simple)
+    e = e.replace(/(\d+(\.\d+)?|\([^()]*\))\s*\^\s*(\d+(\.\d+)?|\([^()]*\))/g, (m,a,_,b)=>`Math.pow(${a},${b})`);
+    e = e.replace(/\^2/g,'**2');
+
+    // functions mapping
+    e = e.replace(/\bln\s*\(/g,'Math.log(');
+    e = e.replace(/\blog10\s*\(/g,'(x=>Math.log10?Math.log10(x):Math.log(x)/Math.LN10)(');
+    e = e.replace(/\bsqrt\s*\(/g,'Math.sqrt(');
+    e = e.replace(/\bsin\s*\(/g,'Math.sin(');
+    e = e.replace(/\bcos\s*\(/g,'Math.cos(');
+    e = e.replace(/\btan\s*\(/g,'Math.tan(');
+
+    try{
+      const fn = new Function('fact','sinDeg','cosDeg','tanDeg','Math', `with(Math){ return (${e}); }`);
+      const res = fn(factorial, deg=>Math.sin(deg*Math.PI/180), deg=>Math.cos(deg*Math.PI/180), deg=>Math.tan(deg*Math.PI/180), Math);
+      return res;
+    }catch(err){
+      throw err;
+    }
+  }
+
+  document.getElementById('eval-btn').addEventListener('click', ()=>{
+    const expr = input.value.trim();
+    exprEl.textContent = expr || '\xa0';
+    if(!expr){ resultEl.textContent='0'; return; }
+    try{
+      const r = safeEval(expr);
+      resultEl.textContent = (typeof r === 'number' && isFinite(r)) ? String(r) : String(r);
+    }catch(e){
+      resultEl.textContent = 'Error';
+    }
+  });
+
+  input.addEventListener('keydown', e=>{
+    if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('eval-btn').click(); }
+  });
+
+})();
+
+/* =========================
+   Flappy Bird game
+   ========================= */
+(function(){
+  const canvas = document.getElementById('flappy-canvas');
+  const ctx = canvas.getContext('2d');
+  const startBtn = document.getElementById('flappy-start-btn');
+  const pauseBtn = document.getElementById('flappy-pause');
+  const goOverlay = document.getElementById('flappy-gameover');
+  const goScore = document.getElementById('flappy-go-score');
+  const restartBtn = document.getElementById('flappy-restart');
+  const returnBtn = document.getElementById('flappy-return');
+  const liveScore = document.getElementById('flappy-score');
+
+  let W = canvas.width, H = canvas.height;
+  let running=false, paused=false;
+  let bird = { x:120, y:H/2, vy:0, r:14 };
+  let gravity = 0.5, lift = -9;
+  let pipes = [], frame=0, score=0;
+  let rafId = null;
+
+  function resetGame(){
+    bird = { x:120, y:H/2, vy:0, r:14 };
+    pipes = [];
+    frame = 0;
+    score = 0;
+    running = false;
+    paused = false;
+    liveScore.textContent = 0;
+    goOverlay.classList.remove('show');
+  }
+
+  function spawnPipe(){
+    const gap = 130;
+    const topH = 60 + Math.random() * (H - 260);
+    pipes.push({ x: W + 40, top: topH, gap, passed:false });
+  }
+
+  function updatePhysics(){
+    frame++;
+    bird.vy += gravity;
+    bird.y += bird.vy;
+
+    if(frame % 90 === 0) spawnPipe();
+
+    for(let i=pipes.length-1;i>=0;i--){
+      pipes[i].x -= 2.6 + Math.min(2.6, score * 0.04);
+      if(!pipes[i].passed && pipes[i].x + 50 < bird.x){ pipes[i].passed = true; score++; liveScore.textContent = score; }
+      if(pipes[i].x + 50 < 0) pipes.splice(i,1);
+    }
+
+    // collisions
+    if(bird.y + bird.r > H || bird.y - bird.r < 0) gameOver();
+    for(let p of pipes){
+      const inX = bird.x + bird.r > p.x && bird.x - bird.r < p.x + 50;
+      if(inX){
+        if(bird.y - bird.r < p.top || bird.y + bird.r > p.top + p.gap) gameOver();
+      }
+    }
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    // background subtle
+    // pipes
+    for(let p of pipes){
+      ctx.fillStyle = '#2bb673';
+      ctx.fillRect(p.x, 0, 50, p.top);
+      ctx.fillRect(p.x, p.top + p.gap, 50, H - (p.top + p.gap));
+    }
+    // bird
+    ctx.beginPath(); ctx.fillStyle='#ffd166'; ctx.arc(bird.x, bird.y, bird.r, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#071428'; ctx.beginPath(); ctx.arc(bird.x+6, bird.y-4, 2.5, 0, Math.PI*2); ctx.fill();
+    // HUD
+    ctx.fillStyle='rgba(255,255,255,0.95)'; ctx.font='20px system-ui'; ctx.fillText('Score: '+score, 12, 28);
+  }
+
+  function loop(){
+    if(!running){ cancelAnimationFrame(rafId); return; }
+    if(!paused){
+      updatePhysics();
+      draw();
+    }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function start(){
+    if(running) return;
+    resetGame();
+    running = true;
+    loop();
+  }
+
+  function stop(){ running = false; cancelAnimationFrame(rafId); }
+
+  function flap(){ if(!running || paused) return; bird.vy = lift; }
+
+  function gameOver(){
+    running = false;
+    goScore.textContent = score;
+    goOverlay.classList.add('show');
+  }
+
+  // Inputs
+  canvas.addEventListener('click', ()=> flap());
+  document.addEventListener('keydown', e=> { if(e.code === 'Space') flap(); });
+
+  // Controls
+  startBtn.addEventListener('click', ()=> { start(); });
+  pauseBtn.addEventListener('click', ()=> { paused = !paused; pauseBtn.textContent = paused ? 'Resume' : 'Pause'; });
+  restartBtn.addEventListener('click', ()=> { goOverlay.classList.remove('show'); start(); });
+  returnBtn.addEventListener('click', ()=> { goOverlay.classList.remove('show'); window.showScreen('flappy-main-screen'); });
+  document.getElementById('flappy-back-btn').addEventListener('click', ()=> { stop(); window.showScreen('main-screen'); });
+
+  // expose for navigation cleanup
+  window._flappy = { stop };
+
+})();
+
+/* =========================
+   Tebak Angka game
+   ========================= */
+(function(){
+  const startBtn = document.getElementById('guess-start-btn');
+  const guessArea = document.getElementById('guess-area');
+  const input = document.getElementById('guess-input');
+  const submitBtn = document.getElementById('guess-submit');
+  const resetBtn = document.getElementById('guess-reset');
+  const feedback = document.getElementById('guess-feedback');
+  const timerFill = document.getElementById('timer-fill');
+  const scoreEl = document.getElementById('guess-score');
+
+  let secret = null, timer = null, timeLeft = 10, score = 0;
+
+  function newSecret(){ secret = Math.floor(Math.random()*1000)+1; /*console.log('secret', secret)*/ }
+
+  function startGame(){
+    newSecret();
+    guessArea.style.display = 'block'; input.value=''; feedback.textContent=''; timeLeft = 10; updateTimer();
+    clearInterval(timer);
+    timer = setInterval(()=>{
+      timeLeft -= 0.1;
+      if(timeLeft <= 0){ timeLeft = 0; clearInterval(timer); onGameOver(false); }
+      updateTimer();
+    },100);
+  }
+
+  function stopGuessGame(){ clearInterval(timer); guessArea.style.display='none'; }
+
+  function updateTimer(){ const pct = Math.max(0, (timeLeft/10)*100); timerFill.style.width = pct + '%'; }
+
+  function onGameOver(won){
+    clearInterval(timer);
+    if(won){ feedback.textContent = 'Benar! Anda menang.'; score++; scoreEl.textContent = score; }
+    else feedback.textContent = 'Waktu habis! Game over. Angka: ' + secret;
+  }
+
+  submitBtn.addEventListener('click', ()=>{
+    if(timeLeft <= 0) return;
+    const val = Number(input.value);
+    if(!val || val < 1 || val > 1000){ feedback.textContent = 'Masukkan angka antara 1-1000'; return; }
+    if(val === secret) onGameOver(true);
+    else if(val > secret) feedback.textContent = 'Terlalu besar';
+    else feedback.textContent = 'Terlalu kecil';
+  });
+
+  resetBtn.addEventListener('click', ()=>{ input.value=''; feedback.textContent=''; });
+
+  startBtn.addEventListener('click', ()=> startGame());
+  // when user clicks the guess menu from main, randomize secret
+  document.querySelectorAll('.menu-item[data-screen="guess-main-screen"]').forEach(n=> n.addEventListener('click', ()=> newSecret()));
+  window.stopGuessGame = stopGuessGame;
+  window.newGuessSecret = newSecret;
+})();
+
+</script>
+</body>
+</html>
